@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wealth-tracker-og",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-06-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "wealth-tracker-db",
+      "database_id": "d48764a8-22df-4ae8-8d17-bd9937852a66"
+    }
+  ],
+  "observability": { "enabled": true },
+  "routes": [{ "pattern": "finance.tomaslife.com", "custom_domain": true }]
+}

@@ -11,7 +11,7 @@ import { CatIcon } from "../components/bits.jsx";
 const TT_STYLE = { background: "#10151d", border: "1px solid var(--border-strong)", borderRadius: 10, fontSize: 13 };
 
 export default function Dashboard() {
-  const { active, sold, nwUSD, nwHistory, H, displayCcy, setDisplayCcy, exRate, refreshPrices, loadingPrices, settings } = useStore();
+  const { active, sold, nwUSD, nwHistory, H, displayCcy, setDisplayCcy, exRate, refreshPrices, loadingPrices, marketLive } = useStore();
 
   const nwDsp = conv(nwUSD, "USD", displayCcy, exRate);
   const totCostU = active.reduce((s, i) => s + H.costUSD(i), 0);
@@ -48,10 +48,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {!settings.finnhubKey && active.some((i) => i.category === "stock") && (
+      {!marketLive && active.some((i) => i.category === "stock") && (
         <div className="card" style={{ borderColor: "rgba(201,168,106,0.3)", background: "var(--accent-soft)", padding: "12px 18px", marginBottom: 18, fontSize: 13 }}>
           <b style={{ color: "var(--accent)" }}>Live prices off.</b>{" "}
-          <span className="muted">Add a free Finnhub API key in Settings to pull live quotes, ratios and the heat map. Manual prices are used meanwhile.</span>
+          <span className="muted">The server's market-data key isn't configured yet — manual prices are used meanwhile.</span>
         </div>
       )}
 

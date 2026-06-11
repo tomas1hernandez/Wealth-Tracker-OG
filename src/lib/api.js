@@ -1,45 +1,44 @@
-// ── Market data: Finnhub (quotes + fundamentals) and FX rates ────
-// A free key from https://finnhub.io powers live quotes, ratios and the
-// heat map. Crypto tickers (BTC-USD style) are routed to Binance symbols.
-
-const FINNHUB = "https://finnhub.io/api/v1";
+// ── Market data via our own backend (/api/market/*) ─────────────
+// The Finnhub key lives server-side as a Worker secret; the browser
+// only ever talks to our backend, which proxies and caches.
 
 export const isCrypto = (t) => /-USD$/i.test(t || "");
 
-function finnhubSymbol(ticker) {
-  const t = (ticker || "").toUpperCase();
-  if (isCrypto(t)) return `BINANCE:${t.replace("-USD", "")}USDT`;
-  return t;
+async function apiGet(path) {
+  const res = await fetch(path, { credentials: "same-origin" });
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+  return res.json();
 }
 
-export async function fetchQuote(ticker, key) {
-  const res = await fetch(`${FINNHUB}/quote?symbol=${encodeURIComponent(finnhubSymbol(ticker))}&token=${key}`);
-  if (!res.ok) throw new Error(`quote ${ticker}: HTTP ${res.status}`);
-  const d = await res.json();
+export async function fetchMarketStatus() {
+  return apiGet("/api/market/status");
+}
+
+export async function fetchQuote(ticker) {
+  const d = await apiGet(`/api/market/quote?symbol=${encodeURIComponent(ticker)}`);
   if (!d || !d.c) return null;
   return { price: d.c, change: d.d ?? 0, changePct: d.dp ?? 0, prevClose: d.pc, ts: Date.now() };
 }
 
-// Fetch many quotes politely (free tier = 60 calls/min)
-export async function fetchQuotes(tickers, key, onProgress) {
+// Fetch many quotes politely (Finnhub free tier = 60 calls/min; the
+// worker caches each symbol for 60 s so retries are cheap)
+export async function fetchQuotes(tickers, onProgress) {
   const out = {};
   let done = 0;
   for (const batch of chunk(tickers, 25)) {
-    const results = await Promise.allSettled(batch.map((t) => fetchQuote(t, key)));
+    const results = await Promise.allSettled(batch.map((t) => fetchQuote(t)));
     results.forEach((r, i) => {
       out[batch[i].toUpperCase()] = r.status === "fulfilled" ? r.value : null;
     });
     done += batch.length;
     onProgress?.(done, tickers.length);
-    if (done < tickers.length) await sleep(28_000); // stay under 60/min
+    if (done < tickers.length) await sleep(28_000);
   }
   return out;
 }
 
-export async function fetchMetrics(ticker, key) {
-  const res = await fetch(`${FINNHUB}/stock/metric?symbol=${encodeURIComponent(ticker.toUpperCase())}&metric=all&token=${key}`);
-  if (!res.ok) throw new Error(`metric ${ticker}: HTTP ${res.status}`);
-  const d = await res.json();
+export async function fetchMetrics(ticker) {
+  const d = await apiGet(`/api/market/metrics?symbol=${encodeURIComponent(ticker.toUpperCase())}`);
   const m = d?.metric || {};
   return {
     pe: m.peTTM ?? m.peBasicExclExtraTTM ?? null,
@@ -62,7 +61,7 @@ export async function fetchMetrics(ticker, key) {
   };
 }
 
-// USD→MXN via frankfurter.app (free, no key)
+// USD→MXN via frankfurter.app (free, no key, public data)
 export async function fetchExchangeRate() {
   try {
     const res = await fetch("https://api.frankfurter.app/latest?from=USD&to=MXN");

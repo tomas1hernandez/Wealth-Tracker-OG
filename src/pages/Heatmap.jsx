@@ -10,7 +10,7 @@ const CACHE_KEY = "wtog.heatmapCache";
 const CACHE_TTL = 15 * 60 * 1000; // 15 min
 
 export default function Heatmap() {
-  const { settings, invs } = useStore();
+  const { marketLive, invs } = useStore();
   const [changes, setChanges] = useState(null); // { TICKER: pct }
   const [mode, setMode] = useState("demo"); // demo | live
   const [loading, setLoading] = useState(false);
@@ -48,13 +48,12 @@ export default function Heatmap() {
   }, []);
 
   const loadLive = async () => {
-    if (!settings.finnhubKey || loading) return;
+    if (!marketLive || loading) return;
     setLoading(true);
     setProgress({ done: 0, total: CONSTITUENTS.length });
     try {
       const quotes = await fetchQuotes(
         CONSTITUENTS.map((c) => c.t),
-        settings.finnhubKey,
         (done, total) => setProgress({ done, total })
       );
       const ch = {};
@@ -105,7 +104,7 @@ export default function Heatmap() {
           <h1 className="page-title">Market Heat Map</h1>
           <p className="page-sub">
             S&amp;P 500 large caps · sized by market cap · colored by daily change
-            {mode === "demo" && <span style={{ color: "var(--accent)" }}> · DEMO DATA — add a Finnhub key in Settings for live quotes</span>}
+            {mode === "demo" && <span style={{ color: "var(--accent)" }}> · DEMO DATA — {marketLive ? "click Load Live Data for real quotes" : "live market data not configured on the server yet"}</span>}
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -114,7 +113,7 @@ export default function Heatmap() {
               Loading quotes… {progress.done}/{progress.total}
             </span>
           )}
-          <button className="btn" onClick={loadLive} disabled={!settings.finnhubKey || loading}>
+          <button className="btn" onClick={loadLive} disabled={!marketLive || loading}>
             <RefreshCw size={13} className={loading ? "spin" : ""} />
             {loading ? "Fetching…" : mode === "live" ? "Refresh Live Data" : "Load Live Data"}
           </button>

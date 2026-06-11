@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Plus, X, KeyRound } from "lucide-react";
-import { Link } from "react-router-dom";
+import { RefreshCw, Plus, X, CloudOff } from "lucide-react";
 import { useStore } from "../state/store.jsx";
 import { fetchMetrics, fetchQuote, isCrypto } from "../lib/api.js";
 import { fmtCompact } from "../lib/calc.js";
@@ -25,7 +24,7 @@ const GAUGES = {
 const COLS = Object.keys(GAUGES);
 
 export default function Ratios() {
-  const { invs, settings, setSettings } = useStore();
+  const { invs, marketLive, watchlist, setWatchlist } = useStore();
   const [data, setData] = useState({}); // ticker -> {metrics, quote}
   const [loading, setLoading] = useState(false);
   const [addT, setAddT] = useState("");
@@ -40,7 +39,6 @@ export default function Ratios() {
       )],
     [invs]
   );
-  const watchlist = settings.watchlist || [];
   const tickers = useMemo(() => [...new Set([...holdings, ...watchlist])], [holdings, watchlist]);
 
   useEffect(() => {
@@ -51,15 +49,12 @@ export default function Ratios() {
   }, []);
 
   const refresh = async () => {
-    if (!settings.finnhubKey || !tickers.length || loading) return;
+    if (!marketLive || !tickers.length || loading) return;
     setLoading(true);
     const next = { ...data };
     for (const t of tickers) {
       try {
-        const [metrics, quote] = await Promise.all([
-          fetchMetrics(t, settings.finnhubKey),
-          fetchQuote(t, settings.finnhubKey),
-        ]);
+        const [metrics, quote] = await Promise.all([fetchMetrics(t), fetchQuote(t)]);
         next[t] = { metrics, quote };
         setData({ ...next });
       } catch { /* skip ticker */ }
@@ -68,20 +63,19 @@ export default function Ratios() {
     setLoading(false);
   };
 
-  // auto-load once if we have a key and tickers without data
+  // auto-load once when live data is available and tickers lack data
   useEffect(() => {
-    if (settings.finnhubKey && tickers.length && tickers.some((t) => !data[t])) refresh();
+    if (marketLive && tickers.length && tickers.some((t) => !data[t])) refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.finnhubKey, tickers.join(",")]);
+  }, [marketLive, tickers.join(",")]);
 
   const addWatch = () => {
     const t = addT.trim().toUpperCase();
     if (!t || tickers.includes(t)) { setAddT(""); return; }
-    setSettings((s) => ({ ...s, watchlist: [...(s.watchlist || []), t] }));
+    setWatchlist((w) => [...w, t]);
     setAddT("");
   };
-  const rmWatch = (t) =>
-    setSettings((s) => ({ ...s, watchlist: (s.watchlist || []).filter((x) => x !== t) }));
+  const rmWatch = (t) => setWatchlist((w) => w.filter((x) => x !== t));
 
   const cellColor = (key, v) => {
     const g = GAUGES[key];
@@ -98,20 +92,19 @@ export default function Ratios() {
           <h1 className="page-title">Key Ratios</h1>
           <p className="page-sub">Fundamentals for your holdings and watchlist — hover a column header for what it means</p>
         </div>
-        <button className="btn" onClick={refresh} disabled={!settings.finnhubKey || loading || !tickers.length}>
+        <button className="btn" onClick={refresh} disabled={!marketLive || loading || !tickers.length}>
           <RefreshCw size={13} className={loading ? "spin" : ""} />
           {loading ? "Fetching…" : "Refresh Ratios"}
         </button>
       </div>
 
-      {!settings.finnhubKey && (
+      {!marketLive && (
         <div className="card" style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 14, borderColor: "rgba(201,168,106,0.3)" }}>
-          <KeyRound size={20} color="var(--accent)" />
+          <CloudOff size={20} color="var(--accent)" />
           <div style={{ flex: 1, fontSize: 13 }}>
-            <b>Ratios need a (free) Finnhub API key.</b>{" "}
-            <span className="muted">Grab one at finnhub.io and paste it in Settings — takes a minute.</span>
+            <b>Live market data isn't configured on the server yet.</b>{" "}
+            <span className="muted">The site owner needs to set the FINNHUB_KEY secret on the backend.</span>
           </div>
-          <Link to="/settings" className="btn btn-primary btn-sm" style={{ textDecoration: "none" }}>Open Settings</Link>
         </div>
       )}
 

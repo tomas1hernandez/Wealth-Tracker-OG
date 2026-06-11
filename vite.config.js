@@ -5,6 +5,10 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   base: "./",
-  // allow serving through directory junctions/symlinks in dev
-  server: { fs: { strict: false } },
+  // allow serving through directory junctions/symlinks in dev;
+  // proxy API calls to the local wrangler dev server
+  server: {
+    fs: { strict: false },
+    proxy: { "/api": "http://localhost:8787" },
+  },
 });

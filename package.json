@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "wrangler dev --port 8787",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "db:local": "wrangler d1 execute wealth-tracker-db --local --file worker/schema.sql",
+    "db:remote": "wrangler d1 execute wealth-tracker-db --remote --file worker/schema.sql"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -17,6 +21,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "wrangler": "^4.99.0"
   }
 }

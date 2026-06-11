@@ -1,43 +1,63 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { conv, valInv, costInv, glInv, roiInv, annROI, fmtCcy, uid } from "../lib/calc.js";
-import { fetchQuote, fetchExchangeRate } from "../lib/api.js";
-
-const LS = {
-  invs: "wtog.invs",
-  settings: "wtog.settings",
-  history: "wtog.nwHistory",
-};
-
-const load = (k, fallback) => {
-  try {
-    const r = localStorage.getItem(k);
-    return r ? JSON.parse(r) : fallback;
-  } catch {
-    return fallback;
-  }
-};
-const save = (k, v) => {
-  try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* quota */ }
-};
+import { fetchQuote, fetchMarketStatus, fetchExchangeRate } from "../lib/api.js";
 
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
 
 export function StoreProvider({ children }) {
-  const [invs, setInvs] = useState(() => load(LS.invs, []));
-  const [settings, setSettings] = useState(() => load(LS.settings, { finnhubKey: "", watchlist: [] }));
-  const [nwHistory, setNwHistory] = useState(() => load(LS.history, []));
+  const [loaded, setLoaded] = useState(false);
+  const [invs, setInvs] = useState([]);
+  const [watchlist, setWatchlist] = useState([]);
+  const [nwHistory, setNwHistory] = useState([]);
   const [prices, setPrices] = useState({});
   const [pricesFetched, setPricesFetched] = useState(false);
   const [loadingPrices, setLoadingPrices] = useState(false);
-  const [priceError, setPriceError] = useState(null);
+  const [marketLive, setMarketLive] = useState(false);
   const [exRate, setExRate] = useState(17.5);
   const [displayCcy, setDisplayCcy] = useState("USD");
+  const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
 
-  useEffect(() => save(LS.invs, invs), [invs]);
-  useEffect(() => save(LS.settings, settings), [settings]);
-  useEffect(() => save(LS.history, nwHistory), [nwHistory]);
-  useEffect(() => { fetchExchangeRate().then(setExRate); }, []);
+  // ── initial load: server data + market status + fx ──
+  useEffect(() => {
+    fetchExchangeRate().then(setExRate);
+    fetchMarketStatus().then((s) => setMarketLive(s.live)).catch(() => setMarketLive(false));
+    fetch("/api/data", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : { data: null }))
+      .then(({ data }) => {
+        if (data) {
+          setInvs(Array.isArray(data.invs) ? data.invs : []);
+          setWatchlist(Array.isArray(data.watchlist) ? data.watchlist : []);
+          setNwHistory(Array.isArray(data.nwHistory) ? data.nwHistory : []);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  // ── debounced server save ──
+  const saveTimer = useRef(null);
+  const skipNextSave = useRef(true); // don't save right after the initial load
+  useEffect(() => {
+    if (!loaded) return;
+    if (skipNextSave.current) { skipNextSave.current = false; return; }
+    setSaveState("saving");
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/data", {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ invs, watchlist, nwHistory }),
+        });
+        setSaveState(res.ok ? "saved" : "error");
+      } catch {
+        setSaveState("error");
+      }
+    }, 1200);
+    return () => clearTimeout(saveTimer.current);
+  }, [invs, watchlist, nwHistory, loaded]);
 
   const activeTickers = useMemo(
     () =>
@@ -50,40 +70,29 @@ export function StoreProvider({ children }) {
   );
 
   const refreshPrices = async () => {
-    if (!settings.finnhubKey) { setPricesFetched(true); return; }
-    if (!activeTickers.length) { setPricesFetched(true); return; }
+    if (!marketLive || !activeTickers.length) { setPricesFetched(true); return; }
     setLoadingPrices(true);
-    setPriceError(null);
-    try {
-      const results = await Promise.allSettled(
-        activeTickers.map((t) => fetchQuote(t, settings.finnhubKey))
-      );
-      setPrices((prev) => {
-        const merged = { ...prev };
-        results.forEach((r, i) => {
-          const t = activeTickers[i];
-          if (r.status === "fulfilled" && r.value) merged[t] = r.value;
-          else if (!(t in merged)) merged[t] = null;
-        });
-        return merged;
+    const results = await Promise.allSettled(activeTickers.map((t) => fetchQuote(t)));
+    setPrices((prev) => {
+      const merged = { ...prev };
+      results.forEach((r, i) => {
+        const t = activeTickers[i];
+        if (r.status === "fulfilled" && r.value) merged[t] = r.value;
+        else if (!(t in merged)) merged[t] = null;
       });
-    } catch (e) {
-      setPriceError(String(e.message || e));
-    }
+      return merged;
+    });
     setPricesFetched(true);
     setLoadingPrices(false);
   };
 
   const tickerKey = activeTickers.join(",");
-  const didInit = useRef(false);
   useEffect(() => {
-    // refresh on load and whenever the holding set or API key changes
-    refreshPrices();
-    didInit.current = true;
+    if (loaded) refreshPrices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tickerKey, settings.finnhubKey]);
+  }, [tickerKey, marketLive, loaded]);
 
-  // ── Derived helpers bound to current prices / fx ──
+  // ── derived helpers bound to current prices / fx ──
   const H = useMemo(() => {
     const $d = (n, ccy = "USD") => fmtCcy(conv(n, ccy, displayCcy, exRate), displayCcy);
     return {
@@ -108,11 +117,13 @@ export function StoreProvider({ children }) {
   const sold = useMemo(() => invs.filter((i) => i.status === "sold"), [invs]);
   const nwUSD = useMemo(() => active.reduce((s, i) => s + H.valUSD(i), 0), [active, H]);
 
-  // Record one net-worth snapshot per day (after prices have arrived)
+  // record one net-worth snapshot per day (after prices have arrived)
   useEffect(() => {
     if (!pricesFetched || !active.length) return;
     const today = new Date().toISOString().slice(0, 10);
     setNwHistory((prev) => {
+      const existing = prev.find((p) => p.date === today);
+      if (existing && Math.abs(existing.value - nwUSD) < 0.01) return prev;
       const rest = prev.filter((p) => p.date !== today);
       return [...rest, { date: today, value: +nwUSD.toFixed(2) }].sort((a, b) =>
         a.date.localeCompare(b.date)
@@ -122,10 +133,11 @@ export function StoreProvider({ children }) {
   }, [nwUSD, pricesFetched]);
 
   const api = {
-    invs, active, sold, nwUSD, nwHistory,
-    prices, pricesFetched, loadingPrices, priceError,
+    loaded, invs, active, sold, nwUSD, nwHistory,
+    prices, pricesFetched, loadingPrices,
+    marketLive, saveState,
     exRate, displayCcy, setDisplayCcy,
-    settings, setSettings,
+    watchlist, setWatchlist,
     H,
     refreshPrices,
     addInv: (inv) => setInvs((p) => [...p, { ...inv, id: uid() }]),
@@ -133,6 +145,12 @@ export function StoreProvider({ children }) {
     deleteInv: (id) => setInvs((p) => p.filter((i) => i.id !== id)),
     sellInv: (id, salePrice, saleDate) =>
       setInvs((p) => p.map((i) => (i.id === id ? { ...i, status: "sold", salePrice, saleDate } : i))),
+    importData: (d) => {
+      if (Array.isArray(d.invs)) setInvs(d.invs);
+      if (Array.isArray(d.watchlist)) setWatchlist(d.watchlist);
+      if (Array.isArray(d.nwHistory)) setNwHistory(d.nwHistory);
+    },
+    wipeData: () => { setInvs([]); setWatchlist([]); setNwHistory([]); },
   };
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
