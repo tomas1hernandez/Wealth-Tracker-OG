@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "wealth-tracker-og",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "C:\\Users\\tomas\\Projects\\wealth-tracker-og",
+      "port": 5173
+    }
+  ]
+}
