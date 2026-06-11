@@ -168,7 +168,8 @@ function finnhubSymbol(raw) {
 }
 
 async function marketProxy(url, env, ctx, kind, ttlSeconds) {
-  if (!env.FINNHUB_KEY) return json({ error: "Market data not configured" }, 503);
+  const key = (env.FINNHUB_KEY || "").trim(); // tolerate stray whitespace/newlines in the secret
+  if (!key) return json({ error: "Market data not configured" }, 503);
   const symbol = url.searchParams.get("symbol");
   if (!symbol || !/^[A-Za-z0-9.:^-]{1,20}$/.test(symbol)) return json({ error: "Bad symbol" }, 400);
 
@@ -183,7 +184,7 @@ async function marketProxy(url, env, ctx, kind, ttlSeconds) {
   const hit = await cache.match(cacheKey);
   if (hit) return withCors(hit);
 
-  const res = await fetch(`${upstream}&token=${env.FINNHUB_KEY}`);
+  const res = await fetch(`${upstream}&token=${key}`);
   if (!res.ok) return json({ error: `Upstream ${res.status}` }, res.status === 429 ? 429 : 502);
   const body = await res.text();
   const out = new Response(body, {
