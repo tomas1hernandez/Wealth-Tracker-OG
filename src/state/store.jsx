@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { conv, valInv, costInv, glInv, roiInv, annROI, fmtCcy, uid } from "../lib/calc.js";
-import { fetchQuote, fetchMarketStatus, fetchExchangeRate } from "../lib/api.js";
+import { fetchQuotes, fetchMarketStatus, fetchExchangeRate } from "../lib/api.js";
 
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
@@ -72,14 +72,14 @@ export function StoreProvider({ children }) {
   const refreshPrices = async () => {
     if (!marketLive || !activeTickers.length) { setPricesFetched(true); return; }
     setLoadingPrices(true);
-    const results = await Promise.allSettled(activeTickers.map((t) => fetchQuote(t)));
+    let quotes = {};
+    try { quotes = await fetchQuotes(activeTickers); } catch { /* keep previous prices */ }
     setPrices((prev) => {
       const merged = { ...prev };
-      results.forEach((r, i) => {
-        const t = activeTickers[i];
-        if (r.status === "fulfilled" && r.value) merged[t] = r.value;
+      for (const t of activeTickers) {
+        if (quotes[t]) merged[t] = quotes[t];
         else if (!(t in merged)) merged[t] = null;
-      });
+      }
       return merged;
     });
     setPricesFetched(true);

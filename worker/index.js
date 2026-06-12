@@ -43,6 +43,8 @@ async function route(request, env, ctx, url) {
     return json({ live: Boolean(env.FINNHUB_KEY) });
   if (p === "/api/market/quote" && m === "GET")
     return marketProxy(url, env, ctx, "quote", 60);
+  if (p === "/api/market/quotes" && m === "GET")
+    return marketQuotes(url, env, ctx);
   if (p === "/api/market/metrics" && m === "GET")
     return marketProxy(url, env, ctx, "metrics", 12 * 3600);
 
@@ -161,10 +163,39 @@ async function putData(request, user, env) {
 
 // ── market data proxy (key never leaves the server) ──────────────
 
-function finnhubSymbol(raw) {
-  const t = (raw || "").toUpperCase();
-  if (/-USD$/.test(t)) return `BINANCE:${t.replace("-USD", "")}USDT`;
-  return t;
+const isCryptoSymbol = (s) => /-USD$/i.test(s || "");
+
+// Finnhub's free /quote only covers US stocks (crypto symbols come back as
+// c:0), so coins are quoted via Coinbase's public market data instead —
+// no key needed, and it natively uses the BTC-USD symbol format.
+async function cryptoQuote(symbol) {
+  const res = await fetch(
+    `https://api.exchange.coinbase.com/products/${encodeURIComponent(symbol.toUpperCase())}/stats`,
+    { headers: { "User-Agent": "wealth-tracker-og" } }
+  );
+  if (!res.ok) return null;
+  const d = await res.json();
+  const last = parseFloat(d.last);
+  const open = parseFloat(d.open); // 24 h open ≈ previous close
+  if (!Number.isFinite(last) || last <= 0) return null;
+  const change = Number.isFinite(open) && open > 0 ? last - open : 0;
+  return {
+    c: last,
+    d: change,
+    dp: Number.isFinite(open) && open > 0 ? (change / open) * 100 : 0,
+    h: parseFloat(d.high) || null,
+    l: parseFloat(d.low) || null,
+    o: open || null,
+    pc: open || null,
+    t: Math.floor(Date.now() / 1000),
+  };
+}
+
+async function fetchOneQuote(symbol, key) {
+  if (isCryptoSymbol(symbol)) return cryptoQuote(symbol);
+  const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol.toUpperCase())}&token=${key}`);
+  if (!res.ok) return null;
+  return res.json();
 }
 
 async function marketProxy(url, env, ctx, kind, ttlSeconds) {
@@ -173,25 +204,71 @@ async function marketProxy(url, env, ctx, kind, ttlSeconds) {
   const symbol = url.searchParams.get("symbol");
   if (!symbol || !/^[A-Za-z0-9.:^-]{1,20}$/.test(symbol)) return json({ error: "Bad symbol" }, 400);
 
-  const upstream =
-    kind === "quote"
-      ? `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(finnhubSymbol(symbol))}`
-      : `https://finnhub.io/api/v1/stock/metric?metric=all&symbol=${encodeURIComponent(symbol.toUpperCase())}`;
-
   // cache per symbol so repeated heat-map loads don't burn the rate limit
   const cacheKey = new Request(`https://cache.local/${kind}/${symbol.toUpperCase()}`);
   const cache = caches.default;
   const hit = await cache.match(cacheKey);
   if (hit) return withCors(hit);
 
-  const res = await fetch(`${upstream}&token=${key}`);
-  if (!res.ok) return json({ error: `Upstream ${res.status}` }, res.status === 429 ? 429 : 502);
-  const body = await res.text();
+  let body;
+  if (kind === "quote") {
+    const q = await fetchOneQuote(symbol, key);
+    if (!q) return json({ error: "Upstream error" }, 502);
+    body = JSON.stringify(q);
+  } else {
+    const res = await fetch(
+      `https://finnhub.io/api/v1/stock/metric?metric=all&symbol=${encodeURIComponent(symbol.toUpperCase())}&token=${key}`
+    );
+    if (!res.ok) return json({ error: `Upstream ${res.status}` }, res.status === 429 ? 429 : 502);
+    body = await res.text();
+  }
   const out = new Response(body, {
     headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${ttlSeconds}` },
   });
   ctx.waitUntil(cache.put(cacheKey, out.clone()));
   return out;
+}
+
+// Bulk quotes: ?symbols=AAPL,MSFT,… — one client request instead of one per
+// symbol. Finnhub has no batch endpoint, so the worker fans out server-side
+// (25 parallel at a time, under Finnhub's 30 req/s burst limit) and shares
+// the same per-symbol 60 s edge cache as /quote. Symbols that fail (e.g.
+// past the 60 req/min free quota) come back null so the client can retry.
+async function marketQuotes(url, env, ctx) {
+  const key = (env.FINNHUB_KEY || "").trim();
+  if (!key) return json({ error: "Market data not configured" }, 503);
+  const symbols = [...new Set(
+    (url.searchParams.get("symbols") || "")
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => /^[A-Z0-9.:^-]{1,20}$/.test(s))
+  )].slice(0, 150);
+  if (!symbols.length) return json({ error: "No symbols" }, 400);
+
+  const cache = caches.default;
+  const quotes = {};
+  for (let i = 0; i < symbols.length; i += 25) {
+    await Promise.all(symbols.slice(i, i + 25).map(async (sym) => {
+      const cacheKey = new Request(`https://cache.local/quote/${sym}`);
+      const hit = await cache.match(cacheKey);
+      if (hit) { quotes[sym] = await hit.json(); return; }
+      try {
+        const q = await fetchOneQuote(sym, key);
+        if (q && q.c) {
+          quotes[sym] = q;
+          const res = new Response(JSON.stringify(q), {
+            headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=60" },
+          });
+          ctx.waitUntil(cache.put(cacheKey, res));
+        } else {
+          quotes[sym] = null;
+        }
+      } catch {
+        quotes[sym] = null;
+      }
+    }));
+  }
+  return json({ quotes });
 }
 
 const withCors = (res) => res; // same-origin app; placeholder if CORS ever needed

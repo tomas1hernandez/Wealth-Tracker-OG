@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { TrendingUp, Mail, Lock, ArrowRight } from "lucide-react";
+import { Mail, Lock, ArrowRight } from "lucide-react";
 import { useAuth } from "../state/auth.jsx";
-import { Lbl } from "../components/bits.jsx";
+import { Lbl, ThMark } from "../components/bits.jsx";
 
 export default function Login() {
   const { login, register } = useAuth();
@@ -33,11 +33,11 @@ export default function Login() {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "radial-gradient(1100px 500px at 50% -10%, rgba(201,168,106,0.07), transparent), var(--bg)" }}>
       <div style={{ width: "100%", maxWidth: 400 }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ width: 52, height: 52, borderRadius: 13, margin: "0 auto 14px", background: "linear-gradient(145deg, #1a2230, #0d1117)", border: "1px solid var(--border-strong)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent)" }}>
-            <TrendingUp size={26} />
+          <div style={{ width: 52, margin: "0 auto 14px" }}>
+            <ThMark size={52} radius={13} />
           </div>
           <h1 className="display" style={{ margin: 0, fontSize: 26 }}>Wealth Tracker</h1>
-          <div style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", letterSpacing: 3, marginTop: 4 }}>OG · Private</div>
+          <div style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", letterSpacing: 3, marginTop: 4 }}>TH · Private</div>
         </div>
 
         <div className="card" style={{ padding: 28 }}>

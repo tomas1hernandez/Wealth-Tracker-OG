@@ -20,19 +20,17 @@ export async function fetchQuote(ticker) {
   return { price: d.c, change: d.d ?? 0, changePct: d.dp ?? 0, prevClose: d.pc, ts: Date.now() };
 }
 
-// Fetch many quotes politely (Finnhub free tier = 60 calls/min; the
-// worker caches each symbol for 60 s so retries are cheap)
-export async function fetchQuotes(tickers, onProgress) {
+// Bulk quotes: one request to the worker, which fans out server-side and
+// caches per symbol. Symbols the upstream rate limit rejected come back null.
+export async function fetchQuotes(tickers) {
   const out = {};
-  let done = 0;
-  for (const batch of chunk(tickers, 25)) {
-    const results = await Promise.allSettled(batch.map((t) => fetchQuote(t)));
-    results.forEach((r, i) => {
-      out[batch[i].toUpperCase()] = r.status === "fulfilled" ? r.value : null;
-    });
-    done += batch.length;
-    onProgress?.(done, tickers.length);
-    if (done < tickers.length) await sleep(28_000);
+  for (const batch of chunk(tickers, 100)) {
+    const d = await apiGet(`/api/market/quotes?symbols=${encodeURIComponent(batch.join(","))}`);
+    for (const t of batch) {
+      const q = d?.quotes?.[t.toUpperCase()];
+      out[t.toUpperCase()] =
+        q && q.c ? { price: q.c, change: q.d ?? 0, changePct: q.dp ?? 0, prevClose: q.pc, ts: Date.now() } : null;
+    }
   }
   return out;
 }
@@ -71,7 +69,6 @@ export async function fetchExchangeRate() {
   return 17.5;
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const chunk = (arr, n) => {
   const out = [];
   for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));

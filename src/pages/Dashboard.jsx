@@ -9,6 +9,7 @@ import { conv, fmtCcy, fmtPct, fmtCompact } from "../lib/calc.js";
 import { CatIcon } from "../components/bits.jsx";
 
 const TT_STYLE = { background: "#10151d", border: "1px solid var(--border-strong)", borderRadius: 10, fontSize: 13 };
+const TT_TEXT = { color: "var(--text)" }; // recharts defaults tooltip text to dark — unreadable on our dark bg
 
 export default function Dashboard() {
   const { active, sold, nwUSD, nwHistory, H, displayCcy, setDisplayCcy, exRate, refreshPrices, loadingPrices, marketLive } = useStore();
@@ -97,7 +98,7 @@ export default function Dashboard() {
               <CartesianGrid stroke="var(--border)" vertical={false} />
               <XAxis dataKey="date" tick={{ fill: "var(--faint)", fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tickFormatter={(v) => fmtCompact(v)} tick={{ fill: "var(--faint)", fontSize: 11 }} axisLine={false} tickLine={false} width={56} />
-              <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtCcy(v, displayCcy), "Net Worth"]} />
+              <Tooltip contentStyle={TT_STYLE} itemStyle={TT_TEXT} labelStyle={TT_TEXT} formatter={(v) => [fmtCcy(v, displayCcy), "Net Worth"]} />
               <Area type="monotone" dataKey="value" stroke="#c9a86a" strokeWidth={2} fill="url(#nwGrad)" />
             </AreaChart>
           </ResponsiveContainer>
@@ -113,7 +114,7 @@ export default function Dashboard() {
                 <Pie data={pieData} cx="50%" cy="50%" innerRadius={74} outerRadius={112} paddingAngle={3} dataKey="value">
                   {pieData.map((e, i) => <Cell key={i} fill={e.color} stroke="var(--bg)" strokeWidth={2} />)}
                 </Pie>
-                <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtCcy(v, displayCcy), "Value"]} />
+                <Tooltip contentStyle={TT_STYLE} itemStyle={TT_TEXT} labelStyle={TT_TEXT} formatter={(v) => [fmtCcy(v, displayCcy), "Value"]} />
                 <Legend
                   formatter={(v, e) => {
                     const tot = pieData.reduce((s, d) => s + d.value, 0);

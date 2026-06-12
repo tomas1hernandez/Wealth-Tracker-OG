@@ -11,6 +11,27 @@ export function CatIcon({ cat, size = 18, color, sw = 1.7 }) {
   return null;
 }
 
+// "TH" monogram brand mark: serif initials in a thin square frame on beige
+export function ThMark({ size = 36, radius = 9 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" style={{ borderRadius: radius, display: "block", flexShrink: 0 }}>
+      <rect width="64" height="64" fill="#D8D1C5" />
+      <rect x="10.5" y="10.5" width="43" height="43" fill="none" stroke="#4A4238" strokeWidth="1.8" />
+      <text
+        x="32" y="42.5"
+        textAnchor="middle"
+        fontFamily="'Playfair Display', Georgia, 'Times New Roman', serif"
+        fontWeight="600"
+        fontSize="29"
+        letterSpacing="-2.5"
+        fill="#4A4238"
+      >
+        TH
+      </text>
+    </svg>
+  );
+}
+
 export const Lbl = ({ children }) => <label className="lbl">{children}</label>;
 export const FRow = ({ children, cols }) => (
   <div className="frow" style={cols ? { gridTemplateColumns: cols } : undefined}>{children}</div>

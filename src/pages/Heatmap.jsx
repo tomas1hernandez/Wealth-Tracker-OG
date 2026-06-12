@@ -8,6 +8,7 @@ import { fmtPct } from "../lib/calc.js";
 
 const CACHE_KEY = "wtog.heatmapCache";
 const CACHE_TTL = 15 * 60 * 1000; // 15 min
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export default function Heatmap() {
   const { marketLive, invs } = useStore();
@@ -47,27 +48,37 @@ export default function Heatmap() {
     setMode("demo");
   }, []);
 
+  const applyQuotes = (quotes) => {
+    const ch = {};
+    for (const c of CONSTITUENTS) {
+      const q = quotes[c.t.toUpperCase()];
+      if (q) ch[c.t] = q.changePct;
+    }
+    if (Object.keys(ch).length) {
+      setChanges((prev) => {
+        const merged = { ...prev, ...ch };
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), changes: merged }));
+        return merged;
+      });
+      setMode("live");
+    }
+    return Object.keys(ch).length;
+  };
+
   const loadLive = async () => {
     if (!marketLive || loading) return;
     setLoading(true);
-    setProgress({ done: 0, total: CONSTITUENTS.length });
+    const symbols = CONSTITUENTS.map((c) => c.t);
     try {
-      const quotes = await fetchQuotes(
-        CONSTITUENTS.map((c) => c.t),
-        (done, total) => setProgress({ done, total })
-      );
-      const ch = {};
-      for (const c of CONSTITUENTS) {
-        const q = quotes[c.t.toUpperCase()];
-        if (q) ch[c.t] = q.changePct;
-      }
-      if (Object.keys(ch).length) {
-        setChanges((prev) => {
-          const merged = { ...prev, ...ch };
-          localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), changes: merged }));
-          return merged;
-        });
-        setMode("live");
+      setProgress({ text: `Loading ${symbols.length} quotes…` });
+      const quotes = await fetchQuotes(symbols);
+      applyQuotes(quotes);
+      // anything the upstream per-minute limit rejected: retry once after it resets
+      const missing = symbols.filter((t) => !quotes[t.toUpperCase()]);
+      if (missing.length && missing.length < symbols.length) {
+        setProgress({ text: `${symbols.length - missing.length}/${symbols.length} loaded — fetching the rest in ~1 min` });
+        await sleep(65_000);
+        applyQuotes(await fetchQuotes(missing));
       }
     } catch { /* keep current data */ }
     setLoading(false);
@@ -110,7 +121,7 @@ export default function Heatmap() {
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {progress && (
             <span className="muted" style={{ fontSize: 12 }}>
-              Loading quotes… {progress.done}/{progress.total}
+              {progress.text}
             </span>
           )}
           <button className="btn" onClick={loadLive} disabled={!marketLive || loading}>

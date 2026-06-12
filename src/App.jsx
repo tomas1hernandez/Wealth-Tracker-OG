@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route, NavLink } from "react-router-dom";
-import { LayoutDashboard, Briefcase, Grid3X3, Sigma, Clock, Settings as SettingsIcon, TrendingUp, LogOut, Cloud, CloudOff } from "lucide-react";
+import { LayoutDashboard, Briefcase, Grid3X3, Sigma, Clock, Settings as SettingsIcon, LogOut, Cloud, CloudOff } from "lucide-react";
+import { ThMark } from "./components/bits.jsx";
 import { AuthProvider, useAuth } from "./state/auth.jsx";
 import { StoreProvider, useStore } from "./state/store.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -45,10 +46,10 @@ function Shell() {
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">
-              <div className="brand-mark"><TrendingUp size={18} /></div>
+              <ThMark size={36} radius={9} />
               <div>
                 <div className="brand-name">Wealth Tracker</div>
-                <div className="brand-sub">OG · Private</div>
+                <div className="brand-sub">TH · Private</div>
               </div>
             </div>
             {NAV.map((n, i) =>
